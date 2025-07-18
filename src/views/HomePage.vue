@@ -1,12 +1,12 @@
 <script setup>
 import { reactive } from 'vue';
 import { useRouter } from 'vue-router';
-import { createUser, getQuests } from '../firebase'
+import { createUser, generateOrderForNewUser } from '../firebase'
 
 const router = useRouter();
-const quests = getQuests()
 
-if (window.sessionStorage.getItem('user')) router.push({ name: 'Quests' })
+// The router navigation guard will handle automatic redirects,
+// so we don't need the redirect logic here anymore
 
 const user = reactive({ 
   name: '', 
@@ -15,9 +15,22 @@ const user = reactive({
 })
 
 const onSubmit = async () => {
-  user.order = quests.value.map(item => parseInt(item.id))
-  await createUser({ ...user })
-  router.push({ name: 'Quests' })
+  try {
+    // Generate unique order for this new user
+    user.order = await generateOrderForNewUser()
+    
+    // Create user - this will automatically generate an ID and store it in sessionStorage
+    await createUser({ ...user })
+    
+    // Get the generated user ID from sessionStorage (set by createUser function)
+    const userId = window.sessionStorage.getItem('user')
+    
+    // Redirect to their specific questions page using the generated ID
+    router.push({ name: 'QuestsWithUser', params: { userId } })
+  } catch (error) {
+    console.error('Error creating user:', error)
+    alert('Error creating user. Please try again.')
+  }
 }
 </script>
 

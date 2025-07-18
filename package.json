@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
+    "host": "ngrok http http://localhost:5173",
     "build": "vite build",
     "preview": "vite preview"
   },
