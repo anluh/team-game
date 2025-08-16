@@ -1,6 +1,6 @@
 <script setup>
 import { getGeneralSettings, getQuests, getUserProgress, updateUserProgress, getGameState } from '../firebase'
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import VQuest from '../components/VQuest.vue';
 import TeamNotification from '../components/TeamNotification.vue';
@@ -24,6 +24,8 @@ const userProgress = ref({
   userData: null
 })
 const userId = ref(null)
+const allQuestsCompleted = ref(false)
+let validationInterval = null
 
 onMounted(() => {
   // First, check if userId is provided via route parameter
@@ -36,29 +38,95 @@ onMounted(() => {
     userId.value = window.sessionStorage.getItem('user')
   }
   
-  // Redirect if no user found
-  if (!userId.value) {
-    router.push({ name: 'Home' })
+  // Validate and redirect if no user found or invalid user ID
+  if (!userId.value || !isValidUserId(userId.value)) {
+    console.log('No valid user ID found, redirecting to home with cleanup. User ID:', userId.value)
+    redirectToHomeWithCleanup('No valid team found. Please create a new team or join an existing one.')
     return
   }
+  
+  console.log('Loading user progress for valid userId:', userId.value)
   
   // Get user progress (including quest order and current question index)
   const progressRef = getUserProgress(userId.value)
   
   // Watch the Firebase ref and update our local ref
   watch(progressRef, (newValue) => {
-    userProgress.value = newValue || {
-      currentQuestIndex: 0,
-      order: [],
-      userData: null
+    console.log('User progress updated:', newValue)
+    
+    if (newValue === null) {
+      // This will be handled by the separate watch below
+      userProgress.value = null
+    } else {
+      userProgress.value = newValue || {
+        currentQuestIndex: 0,
+        order: [],
+        userData: null
+      }
+      
+      // Check if user has completed all questions (on load or update)
+      if (newValue && newValue.order && newValue.order.length > 0) {
+        const currentIndex = newValue.currentQuestIndex || 0
+        const totalQuestions = newValue.order.length
+        
+        // If currentQuestIndex >= total questions, user has completed all
+        if (currentIndex >= totalQuestions) {
+          console.log('User has completed all questions, showing finish screen')
+          allQuestsCompleted.value = true
+        }
+      }
     }
   }, { immediate: true })
+})
+
+// Cleanup on unmount
+onUnmounted(() => {
+  console.log('QuestsPage unmounting, cleaning up intervals')
+  if (validationInterval) {
+    clearInterval(validationInterval)
+    validationInterval = null
+  }
 })
 
 // Computed properties based on user progress
 const activeQuest = computed(() => {
     return userProgress.value?.currentQuestIndex || 0
 })
+
+// Clear all storage data
+const clearAllStorageData = () => {
+    try {
+        // Clear sessionStorage
+        sessionStorage.removeItem('user')
+        sessionStorage.removeItem('adminAuthenticated')
+        
+        // Clear localStorage (if any game data is stored there)
+        localStorage.removeItem('user')
+        localStorage.removeItem('teamData')
+        localStorage.removeItem('gameData')
+        
+        console.log('All storage data cleared')
+    } catch (error) {
+        console.error('Error clearing storage:', error)
+    }
+}
+
+// Validate userId format (basic validation)
+const isValidUserId = (id) => {
+    if (!id || typeof id !== 'string') return false
+    // Basic validation - should be non-empty string without invalid characters
+    if (id.trim().length === 0) return false
+    if (id.includes('undefined') || id.includes('null')) return false
+    // Could add more specific Firebase ID validation if needed
+    return true
+}
+
+// Redirect to home with cleanup
+const redirectToHomeWithCleanup = (message = 'Redirecting to home page...') => {
+    clearAllStorageData()
+    alert(message)
+    router.push({ name: 'Home' })
+}
 
 const userQuestOrder = computed(() => {
     return userProgress.value?.order || []
@@ -120,8 +188,16 @@ const questProgress = computed(() => {
 
 const handleNextQuestion = async () => {
     if (isLastQuest.value) {
-        // User completed all questions
-        alert('Вітаємо! Ви пройшли всі питання!')
+        // User completed all questions - show finish screen
+        console.log('All quests completed, showing finish screen')
+        allQuestsCompleted.value = true
+        
+        // Update user progress to mark as completed
+        try {
+            await updateUserProgress(userId.value, userQuestOrder.value.length)
+        } catch (error) {
+            console.error('Error marking completion:', error)
+        }
         return
     }
     
@@ -137,11 +213,14 @@ const handleNextQuestion = async () => {
     }
 }
 
-// Watch for user deletion (when userProgress becomes null)
-watch(userProgress, (newProgress) => {
-    if (newProgress === null) {
-        alert('Your team has been removed by the administrator. You will be redirected to the home page.')
-        router.push({ name: 'Home' })
+// Watch for user deletion or non-existence (when userProgress becomes null)
+watch(userProgress, (newProgress, oldProgress) => {
+    console.log('User progress watch triggered:', { newProgress, oldProgress, userId: userId.value })
+    
+    if (newProgress === null && userId.value) {
+        // User was deleted or doesn't exist
+        console.log('User no longer exists, triggering cleanup and redirect')
+        redirectToHomeWithCleanup('Your team has been removed by the administrator or no longer exists. You will be redirected to the home page.')
     }
 }, { immediate: true })
 
@@ -162,44 +241,71 @@ watch(userProgress, (newProgress) => {
         
         <!-- Game Started - Show Quest Content -->
         <div v-else>
-            <!-- Progress indicator -->
-            <div v-if="userQuestOrder && userQuestOrder.length > 0" class="progress-bar">
-                <div class="progress-info">
-                    <span class="progress-text">Питання {{ questProgress }}</span>
-                    <div class="progress-visual">
-                        <div 
-                            class="progress-fill" 
-                            :style="{ width: `${((activeQuest + 1) / userQuestOrder.length) * 100}%` }"
-                        ></div>
+            <!-- All Quests Completed - Finish Screen -->
+            <div v-if="allQuestsCompleted" class="finish-screen">
+                <div class="finish-content">
+                    <div class="finish-icon">🎉</div>
+                    <h2 class="finish-title">Урра, ви пройшли усі випробування!</h2>
+                    <p class="finish-message">Повертайтесь до місця проведення табору!</p>
+                    <div class="finish-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Команда:</span>
+                            <span class="stat-value">{{ teamName }}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Пройдено питань:</span>
+                            <span class="stat-value">{{ userQuestOrder?.length || 0 }}</span>
+                        </div>
+                    </div>
+                    <div class="finish-decoration">
+                        <span class="trophy">🏆</span>
+                        <span class="star">⭐</span>
+                        <span class="trophy">🏆</span>
                     </div>
                 </div>
             </div>
             
-            <!-- Loading state -->
-            <div v-if="!activeQuestData && (!userQuestOrder || userQuestOrder.length === 0)" class="loading">
-                <p>Loading your quest...</p>
-            </div>
-            
-            <!-- No quests available -->
-            <div v-else-if="!activeQuestData && userQuestOrder && userQuestOrder.length === 0" class="no-quests">
-                <p>No quests available yet. Please check with the admin.</p>
-            </div>
-            
-            <!-- Quest component -->
-            <VQuest 
-                v-else-if="activeQuestData" 
-                :quest="activeQuestData" 
-                @next-question="handleNextQuestion"
-            />
-            
-            <!-- Completion state -->
-            <div v-if="isLastQuest && activeQuestData" class="completion-info">
-                <p class="completion-text">🏆 Це останнє питання!</p>
-            </div>
-            
-            <!-- Error state -->
-            <div v-else-if="!activeQuestData" class="error">
-                <p>Unable to load quest. Please try refreshing the page.</p>
+            <!-- Quest Content (when not completed) -->
+            <div v-else>
+                <!-- Progress indicator -->
+                <div v-if="userQuestOrder && userQuestOrder.length > 0" class="progress-bar">
+                    <div class="progress-info">
+                        <span class="progress-text">Питання {{ questProgress }}</span>
+                        <div class="progress-visual">
+                            <div 
+                                class="progress-fill" 
+                                :style="{ width: `${((activeQuest + 1) / userQuestOrder.length) * 100}%` }"
+                            ></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Loading state -->
+                <div v-if="!activeQuestData && (!userQuestOrder || userQuestOrder.length === 0)" class="loading">
+                    <p>Loading your quest...</p>
+                </div>
+                
+                <!-- No quests available -->
+                <div v-else-if="!activeQuestData && userQuestOrder && userQuestOrder.length === 0" class="no-quests">
+                    <p>No quests available yet. Please check with the admin.</p>
+                </div>
+                
+                <!-- Quest component -->
+                <VQuest 
+                    v-else-if="activeQuestData" 
+                    :quest="activeQuestData" 
+                    @next-question="handleNextQuestion"
+                />
+                
+                <!-- Last question indicator -->
+                <div v-if="isLastQuest && activeQuestData" class="completion-info">
+                    <p class="completion-text">🏆 Це останнє питання!</p>
+                </div>
+                
+                <!-- Error state -->
+                <div v-else-if="!activeQuestData" class="error">
+                    <p>Unable to load quest. Please try refreshing the page.</p>
+                </div>
             </div>
         </div>
     </div>
@@ -318,7 +424,130 @@ watch(userProgress, (newProgress) => {
     background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
 }
 
-/* Mobile-specific optimizations */
+/* Finish Screen Styles */
+.finish-screen {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 60vh;
+    padding: 40px 20px;
+}
+
+.finish-content {
+    text-align: center;
+    max-width: 600px;
+    width: 100%;
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    color: white;
+    padding: 40px;
+    border-radius: 20px;
+    box-shadow: 0 10px 40px rgba(40, 167, 69, 0.3);
+    animation: finishAppear 0.8s ease-out;
+}
+
+@keyframes finishAppear {
+    from {
+        opacity: 0;
+        transform: translateY(50px) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.finish-icon {
+    font-size: 80px;
+    margin-bottom: 20px;
+    animation: bounce 2s infinite;
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% {
+        transform: translateY(0);
+    }
+    40% {
+        transform: translateY(-20px);
+    }
+    60% {
+        transform: translateY(-10px);
+    }
+}
+
+.finish-title {
+    font-size: 32px;
+    font-weight: 700;
+    margin: 0 0 16px 0;
+    color: white !important;
+    line-height: 1.2;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.finish-message {
+    font-size: 20px;
+    font-weight: 500;
+    margin: 0 0 30px 0;
+    color: rgba(255, 255, 255, 0.95) !important;
+    line-height: 1.4;
+}
+
+.finish-stats {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 20px 0;
+    backdrop-filter: blur(10px);
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 8px 0;
+    font-size: 16px;
+}
+
+.stat-label {
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.9) !important;
+}
+
+.stat-value {
+    font-weight: 700;
+    color: white !important;
+    font-size: 18px;
+}
+
+.finish-decoration {
+    margin-top: 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+}
+
+.trophy, .star {
+    font-size: 40px;
+    animation: pulse 2s infinite;
+}
+
+.star {
+    animation-delay: 0.5s;
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.1);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Mobile optimizations */
 @media (max-width: 768px) {
     .quests-page {
         padding: 12px;
@@ -374,6 +603,55 @@ watch(userProgress, (newProgress) => {
         margin: 20px 0;
         border-radius: 12px;
         font-size: 15px;
+    }
+    
+    /* Finish screen mobile styles */
+    .finish-screen {
+        min-height: 50vh;
+        padding: 20px 10px;
+    }
+    
+    .finish-content {
+        padding: 30px 20px;
+        border-radius: 16px;
+    }
+    
+    .finish-icon {
+        font-size: 60px;
+        margin-bottom: 16px;
+    }
+    
+    .finish-title {
+        font-size: 24px;
+        margin-bottom: 12px;
+    }
+    
+    .finish-message {
+        font-size: 18px;
+        margin-bottom: 24px;
+    }
+    
+    .finish-stats {
+        padding: 16px;
+        margin: 16px 0;
+    }
+    
+    .stat-item {
+        font-size: 15px;
+        margin: 6px 0;
+    }
+    
+    .stat-value {
+        font-size: 16px;
+    }
+    
+    .finish-decoration {
+        margin-top: 24px;
+        gap: 16px;
+    }
+    
+    .trophy, .star {
+        font-size: 32px;
     }
 }
 

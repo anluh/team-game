@@ -194,15 +194,16 @@ const confirmDelete = async (questId, question) => {
             </button>
           </div>
 
-          <!-- QR Code -->
+          <!-- QR Code / Secret Code -->
           <div class="form-group">
-            <label for="qr">QR Code (optional):</label>
+            <label for="qr">Secret Code (QR):</label>
             <input 
               type="text" 
               id="qr"
               v-model="questForm.qr" 
-              placeholder="QR code data or URL"
+              placeholder="Enter secret code that teams must find in QR"
             />
+            <small class="field-help">Teams will need to enter this code after answering correctly to proceed to the next question.</small>
           </div>
 
           <!-- Success Image Name -->

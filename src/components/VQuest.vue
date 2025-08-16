@@ -23,25 +23,68 @@ const questCompleted = ref(false)
 const showWrongAnswer = ref(false)
 const showFullImage = ref(false)
 
+// Secret code verification
+const secretCode = ref('')
+const showSecretCodeInput = ref(false)
+const showWrongSecretCode = ref(false)
+const secretCodeCompleted = ref(false)
+
 const checkAnswer = () => {
-    if (props.quest?.answers && props.quest.answers.includes(answer.value)) {
-        questionCompleted.value = true
-        showWrongAnswer.value = false
-    } else {
-        showWrongAnswer.value = true
-        // Auto-hide wrong answer message after 3 seconds
-        setTimeout(() => {
+    if (props.quest?.answers) {
+        // Convert user answer to lowercase and trim whitespace
+        const userAnswer = answer.value.toLowerCase().trim()
+        
+        // Convert all stored answers to lowercase for comparison
+        const correctAnswers = props.quest.answers.map(ans => ans.toLowerCase().trim())
+        
+        if (correctAnswers.includes(userAnswer)) {
+            questionCompleted.value = true
             showWrongAnswer.value = false
-        }, 3000)
+            // Show secret code input after correct answer
+            showSecretCodeInput.value = true
+        } else {
+            showWrongAnswer.value = true
+            // Auto-hide wrong answer message after 3 seconds
+            setTimeout(() => {
+                showWrongAnswer.value = false
+            }, 3000)
+        }
+    }
+}
+
+const checkSecretCode = () => {
+    if (props.quest?.qr) {
+        // Convert secret code to lowercase and trim for comparison
+        const userSecretCode = secretCode.value.toLowerCase().trim()
+        const correctSecretCode = props.quest.qr.toLowerCase().trim()
+        
+        if (userSecretCode === correctSecretCode) {
+            secretCodeCompleted.value = true
+            showWrongSecretCode.value = false
+        } else {
+            showWrongSecretCode.value = true
+            // Auto-hide wrong secret code message after 3 seconds
+            setTimeout(() => {
+                showWrongSecretCode.value = false
+            }, 3000)
+        }
     }
 }
 
 const goToNextQuestion = () => {
-    emit('nextQuestion')
-    // Reset for next question
-    answer.value = ''
-    questionCompleted.value = false
-    showWrongAnswer.value = false
+    // Only proceed if both answer and secret code are correct
+    if (questionCompleted.value && secretCodeCompleted.value) {
+        emit('nextQuestion')
+        
+        // Reset all states for next question
+        answer.value = ''
+        secretCode.value = ''
+        questionCompleted.value = false
+        showSecretCodeInput.value = false
+        secretCodeCompleted.value = false
+        showWrongAnswer.value = false
+        showWrongSecretCode.value = false
+    }
 }
 
 const openFullImage = () => {
@@ -101,14 +144,6 @@ onUnmounted(() => {
                 <div class="success-message">
                     ✅ Вірно!
                 </div>
-                
-                <button 
-                    @click="goToNextQuestion"
-                    class="next-btn"
-                    type="button"
-                >
-                    Наступне питання →
-                </button>
             </div>
         </form>
         
@@ -116,6 +151,7 @@ onUnmounted(() => {
             <p>No quest data available</p>
         </div>
         
+        <!-- Success Image -->
         <div v-if="questionCompleted" class="map">
             <img 
                 :src="`/${props.quest.imageName || 'map-1'}.jpg`" 
@@ -124,6 +160,61 @@ onUnmounted(() => {
                 class="success-image"
             >
             <p class="image-hint">Клікніть на зображення для повного перегляду</p>
+        </div>
+        
+        <!-- Secret Code Section (after image) -->
+        <div v-if="questionCompleted" class="secret-code-container">
+            <!-- Secret Code Input Section -->
+            <div v-if="showSecretCodeInput && !secretCodeCompleted" class="secret-code-section">
+                <h4 class="secret-code-title">🔐 Секретний код</h4>
+                <p class="secret-code-description">Для переходу до наступного питання:</p>
+                
+                <form @submit.prevent="checkSecretCode()" class="secret-code-form">
+                    <input 
+                        type="text" 
+                        v-model="secretCode" 
+                        placeholder="Введіть секретний код..."
+                        class="secret-code-input"
+                        autocomplete="off"
+                    >
+                    <button 
+                        type="submit"
+                        :disabled="!secretCode.trim()"
+                        class="verify-code-btn"
+                    >
+                        🔍 Перевірити код
+                    </button>
+                </form>
+                
+                <!-- Wrong Secret Code Message -->
+                <div v-if="showWrongSecretCode" class="wrong-secret-code-message">
+                    <div class="wrong-icon">❌</div>
+                    <div class="wrong-text">
+                        <strong>Неправильний код</strong>
+                        <p>Перевірте QR-код і спробуйте ще раз!</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Secret Code Success -->
+            <div v-if="secretCodeCompleted" class="secret-code-success">
+                <div class="code-success-message">
+                    🎉 Код підтверджено!
+                </div>
+            </div>
+            
+            <!-- Next Question Button -->
+            <div class="next-question-container">
+                <button 
+                    @click="goToNextQuestion"
+                    class="next-btn"
+                    type="button"
+                    :disabled="!secretCodeCompleted"
+                    :class="{ 'disabled': !secretCodeCompleted }"
+                >
+                    {{ secretCodeCompleted ? 'Наступне питання →' : 'Знайдіть місце, виконайте завдання та введіть секретний код' }}
+                </button>
+            </div>
         </div>
         
         <!-- Full-page Image Modal -->
@@ -237,45 +328,6 @@ onUnmounted(() => {
     font-size: 20px;
     font-weight: 600;
     margin-bottom: 16px;
-}
-
-.next-btn {
-    background-color: #28a745;
-    color: white !important;
-    border: none;
-    padding: 12px 24px;
-    border-radius: 8px;
-    font-size: 16px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-    min-height: 48px;
-    
-    &:hover {
-        background-color: #218838;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
-    }
-}
-
-.no-quest {
-    padding: 40px 20px;
-    text-align: center;
-    color: #666;
-    font-size: 16px;
-}
-
-.no-quest p {
-    color: #212529 !important;
-    font-size: 18px;
-    text-align: center;
-    margin-top: 40px;
-}
-
-.map {
-    margin-top: 24px;
-    text-align: center;
-    flex: 1;
 }
 
 /* Wrong Answer Message - Mobile Optimized */
@@ -407,7 +459,205 @@ onUnmounted(() => {
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
 }
 
-/* Mobile-specific adjustments */
+/* Secret Code Container - Better UX Flow */
+.secret-code-container {
+    margin-top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+/* Secret Code Section Styles */
+.secret-code-section {
+    padding: 20px;
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    border-radius: 12px;
+    border-left: 4px solid #ffc107;
+    box-shadow: 0 2px 8px rgba(255, 193, 7, 0.1);
+}
+
+.secret-code-title {
+    color: #856404 !important;
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    text-align: center;
+}
+
+.secret-code-description {
+    color: #856404 !important;
+    font-size: 14px;
+    margin: 0 0 16px 0;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.secret-code-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.secret-code-input {
+    padding: 14px 18px;
+    font-size: 16px;
+    width: 100%;
+    border: 2px solid #ffc107;
+    border-radius: 10px;
+    transition: all 0.2s;
+    box-sizing: border-box;
+    color: #212529 !important;
+    background-color: #fff;
+    text-align: center;
+    font-weight: 500;
+}
+
+.secret-code-input:focus {
+    outline: none;
+    border-color: #ff9500;
+    box-shadow: 0 0 0 3px rgba(255, 193, 7, 0.2);
+    transform: scale(1.02);
+}
+
+.verify-code-btn {
+    padding: 14px 24px;
+    font-size: 15px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #ffc107 0%, #ff9500 100%);
+    color: #212529 !important;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-height: 48px;
+    box-shadow: 0 2px 6px rgba(255, 193, 7, 0.3);
+}
+
+.verify-code-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #ff9500 0%, #e8890b 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 193, 7, 0.4);
+}
+
+.verify-code-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: 0 2px 6px rgba(255, 193, 7, 0.2);
+}
+
+.wrong-secret-code-message {
+    margin-top: 12px;
+    padding: 12px;
+    background: linear-gradient(135deg, #f8d7da 0%, #f1c2c7 100%);
+    border-radius: 8px;
+    border-left: 4px solid #dc3545;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: shake 0.5s ease-in-out;
+}
+
+.secret-code-success {
+    padding: 20px;
+    background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+    border-radius: 12px;
+    border-left: 4px solid #28a745;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(40, 167, 69, 0.1);
+}
+
+.code-success-message {
+    color: #155724 !important;
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+}
+
+/* Next Question Button Container */
+.next-question-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 8px;
+}
+
+.next-btn {
+    padding: 16px 32px;
+    font-size: 16px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    color: white !important;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s;
+    min-height: 56px;
+    max-width: 400px;
+    width: 100%;
+    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2);
+}
+
+.next-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #218838 0%, #1bc5a0 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(40, 167, 69, 0.3);
+}
+
+.next-btn.disabled {
+    background: linear-gradient(135deg, #6c757d 0%, #5a6268 100%) !important;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: 0 2px 6px rgba(108, 117, 125, 0.2) !important;
+    font-size: 14px;
+    opacity: 0.8;
+}
+
+/* Map and No Quest Styles */
+.no-quest {
+    padding: 40px 20px;
+    text-align: center;
+    color: #666;
+    font-size: 16px;
+}
+
+.no-quest p {
+    color: #212529 !important;
+    font-size: 18px;
+    text-align: center;
+    margin-top: 40px;
+}
+
+.map {
+    margin-top: 20px;
+    text-align: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.success-image {
+    max-width: 100%;
+    height: auto;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.success-image:hover {
+    transform: scale(1.02);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+}
+
+.image-hint {
+    margin-top: 12px;
+    font-size: 14px;
+    color: #6c757d;
+    font-style: italic;
+}
+
+/* Mobile optimizations for secret code */
 @media (max-width: 768px) {
     .quest-container {
         padding: 12px;
@@ -456,6 +706,55 @@ onUnmounted(() => {
     .image-hint {
         font-size: 12px;
         padding: 6px 12px;
+    }
+    
+    .secret-code-section {
+        margin-top: 16px;
+        padding: 16px;
+    }
+    
+    .secret-code-title {
+        font-size: 16px;
+    }
+    
+    .secret-code-description {
+        font-size: 13px;
+        margin: 0 0 12px 0;
+    }
+    
+    .secret-code-input {
+        padding: 12px 16px;
+        font-size: 15px;
+    }
+    
+    .verify-code-btn {
+        padding: 12px 20px;
+        font-size: 14px;
+        min-height: 44px;
+    }
+    
+    .code-success-message {
+        font-size: 16px;
+    }
+    
+    .secret-code-container {
+        margin-top: 16px;
+        gap: 16px;
+    }
+    
+    .map {
+        margin-top: 16px;
+        padding: 16px;
+    }
+    
+    .next-btn {
+        padding: 14px 24px;
+        font-size: 15px;
+        min-height: 48px;
+    }
+    
+    .next-btn.disabled {
+        font-size: 13px;
     }
 }
 

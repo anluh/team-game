@@ -11,6 +11,7 @@ import {
   deleteDoc,
   writeBatch,
   setDoc,
+  getDoc,
 } from "firebase/firestore";
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
@@ -292,11 +293,29 @@ export const generateOrderForNewUser = async () => {
 export const updateUserProgress = async (userId, currentQuestIndex) => {
   try {
     const userRef = doc(db, "users", userId);
-    await updateDoc(userRef, { 
+    
+    // Get user data to check if they're completing all questions
+    const userDoc = await getDoc(userRef);
+    const userData = userDoc.data();
+    const userOrder = userData?.order || [];
+    
+    // Check if this update represents completion of all questions
+    const isCompletion = userOrder.length > 0 && currentQuestIndex >= userOrder.length;
+    
+    const updateData = {
       currentQuestIndex: currentQuestIndex,
       lastUpdated: Date.now()
-    });
-    console.log("User progress updated:", { userId, currentQuestIndex });
+    };
+    
+    // Add completion timestamp if team has finished all questions
+    if (isCompletion) {
+      updateData.completedAt = Date.now();
+      updateData.isCompleted = true;
+      console.log("Team completed all questions:", userId);
+    }
+    
+    await updateDoc(userRef, updateData);
+    console.log("User progress updated:", { userId, currentQuestIndex, isCompletion });
   } catch (error) {
     console.error("Error updating user progress:", error);
     throw error;

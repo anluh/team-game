@@ -85,10 +85,40 @@ const stopTimer = () => {
   }
 }
 
-// Game time calculation
+// Calculate completion time for finished teams
+const getCompletionTime = (user) => {
+  // Check if team has completed all questions
+  if (!user.order || user.order.length === 0) return null
+  
+  const currentIndex = user.currentQuestIndex || 0
+  const totalQuestions = user.order.length
+  
+  // Only show completion time if they've finished all questions
+  if (currentIndex < totalQuestions) return null
+  
+  // Use the completion timestamp if available, otherwise use current time
+  const completionTime = user.completedAt || Date.now()
+  const gameStartTime = gameState.value?.startTime
+  
+  if (!gameStartTime) return null
+  
+  const duration = completionTime - gameStartTime
+  const hours = Math.floor(duration / (1000 * 60 * 60))
+  const minutes = Math.floor((duration % (1000 * 60 * 60)) / (1000 * 60))
+  const seconds = Math.floor((duration % (1000 * 60)) / 1000)
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds}s`
+  } else {
+    return `${seconds}s`
+  }
+}
+
+// Computed properties for game time
 const gameTime = computed(() => {
-  if (!gameState.value?.isStarted || !gameState.value?.startTime) {
-    // console.log("Game not started or no start time");
+  if (!gameState.value?.startTime) {
     return "00:00:00"
   }
   
@@ -97,10 +127,66 @@ const gameTime = computed(() => {
   const minutes = Math.floor((elapsed % (1000 * 60 * 60)) / (1000 * 60))
   const seconds = Math.floor((elapsed % (1000 * 60)) / 1000)
   
-  const timeString = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-  // console.log("Game time calculated:", timeString, "startTime:", gameState.value.startTime, "currentTime:", currentTime.value);
-  return timeString
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
 })
+
+// Format completion time for display
+const formatCompletionTime = (timestamp) => {
+  if (!timestamp) return null
+  
+  const date = new Date(timestamp)
+  const now = new Date()
+  const isToday = date.toDateString() === now.toDateString()
+  
+  if (isToday) {
+    // Show only time if completed today
+    return date.toLocaleTimeString('uk-UA', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      second: '2-digit'
+    })
+  } else {
+    // Show date and time if completed on different day
+    return date.toLocaleString('uk-UA', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+}
+
+// Check if team has completed all questions
+const isTeamCompleted = (user) => {
+  return user.isCompleted || 
+         (user.order && user.order.length > 0 && 
+          (user.currentQuestIndex || 0) >= user.order.length)
+}
+
+// Get team completion status
+const getTeamStatus = (user) => {
+  if (isTeamCompleted(user)) {
+    return {
+      status: 'completed',
+      message: '🏆 Завершено',
+      completedAt: user.completedAt
+    }
+  } else if (user.order && user.order.length > 0) {
+    const progress = (user.currentQuestIndex || 0) + 1
+    const total = user.order.length
+    return {
+      status: 'in-progress',
+      message: `🔄 В процесі (${progress}/${total})`,
+      completedAt: null
+    }
+  } else {
+    return {
+      status: 'not-started',
+      message: '⏳ Не розпочато',
+      completedAt: null
+    }
+  }
+}
 
 // Team quest progress
 const teamProgress = computed(() => {
@@ -523,6 +609,12 @@ onUnmounted(() => {
               
               <!-- Team Notification (if any) -->
               <TeamNotification :teamId="user.id" :isAdmin="true" />
+              
+              <!-- Completion Time Display -->
+              <div v-if="getCompletionTime(user)" class="completion-time-display">
+                <span class="completion-label">Час виконання:</span>
+                <span class="completion-value">{{ getCompletionTime(user) }}</span>
+              </div>
               
               <div v-if="user.order && user.order.length > 0" class="order-info">
                 <div class="order-header" @click="toggleUserQuestions(user.id)">
@@ -1106,6 +1198,33 @@ onUnmounted(() => {
   font-size: 11px;
 }
 
+/* Completion Time Display */
+.completion-time-display {
+  display: flex;
+  align-items: center;
+  margin: 8px 0;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+  border-radius: 6px;
+  border-left: 4px solid #28a745;
+}
+
+.completion-label {
+  font-weight: 600;
+  color: #155724;
+  margin-right: 8px;
+}
+
+.completion-value {
+  font-weight: 700;
+  color: #155724;
+  background: rgba(21, 87, 36, 0.1);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+}
+
 /* Button improvements */
 .btn-success {
   background-color: #28a745;
@@ -1207,6 +1326,21 @@ onUnmounted(() => {
   
   .char-count {
     font-size: 10px;
+  }
+  
+  /* Completion time display mobile styles */
+  .completion-time-display {
+    margin: 6px 0;
+    padding: 6px 10px;
+  }
+  
+  .completion-label {
+    font-size: 13px;
+  }
+  
+  .completion-value {
+    font-size: 12px;
+    padding: 2px 6px;
   }
 }
 
