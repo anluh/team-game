@@ -439,3 +439,127 @@ export const getGameState = () => {
   onUnmounted(close);
   return gameState;
 };
+
+// NOTIFICATION SYSTEM
+export const sendNotificationToTeam = async (teamId, message) => {
+  try {
+    const notificationRef = doc(db, "teamNotifications", teamId);
+    await setDoc(notificationRef, {
+      teamId: teamId,
+      message: message,
+      timestamp: Date.now(),
+      isActive: true,
+      response: null
+    });
+    console.log("Notification sent to team:", teamId);
+  } catch (error) {
+    console.error("Error sending notification to team:", error);
+    throw error;
+  }
+};
+
+export const sendNotificationToAllTeams = async (message) => {
+  try {
+    // Get all users first
+    const usersSnapshot = await getDocs(collection(db, "users"));
+    const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // Use batch to send to all teams
+    const batch = writeBatch(db);
+    
+    users.forEach(user => {
+      const notificationRef = doc(db, "teamNotifications", user.id);
+      batch.set(notificationRef, {
+        teamId: user.id,
+        message: message,
+        timestamp: Date.now(),
+        isActive: true,
+        response: null
+      });
+    });
+    
+    await batch.commit();
+    console.log("Notification sent to all teams");
+  } catch (error) {
+    console.error("Error sending notification to all teams:", error);
+    throw error;
+  }
+};
+
+export const respondToTeamNotification = async (teamId, answer) => {
+  try {
+    const notificationRef = doc(db, "teamNotifications", teamId);
+    await updateDoc(notificationRef, {
+      response: {
+        answer: answer,
+        timestamp: Date.now()
+      }
+    });
+    console.log("Response recorded for team:", teamId, "Answer:", answer);
+  } catch (error) {
+    console.error("Error responding to notification:", error);
+    throw error;
+  }
+};
+
+export const clearTeamNotification = async (teamId) => {
+  try {
+    const notificationRef = doc(db, "teamNotifications", teamId);
+    await updateDoc(notificationRef, {
+      isActive: false,
+      clearedAt: Date.now()
+    });
+    console.log("Notification cleared for team:", teamId);
+  } catch (error) {
+    console.error("Error clearing notification:", error);
+    throw error;
+  }
+};
+
+export const getTeamNotification = (teamId) => {
+  const notification = ref(null);
+  
+  const close = onSnapshot(
+    doc(db, "teamNotifications", teamId),
+    (doc) => {
+      if (doc.exists()) {
+        const data = doc.data();
+        notification.value = data.isActive ? data : null;
+      } else {
+        notification.value = null;
+      }
+    },
+    (error) => {
+      console.error("Error loading team notification:", error);
+      notification.value = null;
+    }
+  );
+
+  onUnmounted(close);
+  return notification;
+};
+
+export const getAllTeamNotifications = () => {
+  const notifications = ref([]);
+  
+  const close = onSnapshot(
+    collection(db, "teamNotifications"),
+    (querySnapshot) => {
+      notifications.value = querySnapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(notification => notification.isActive);
+    },
+    (error) => {
+      console.error("Error loading team notifications:", error);
+      notifications.value = [];
+    }
+  );
+
+  onUnmounted(close);
+  return notifications;
+};
+
+// Legacy function for backward compatibility
+export const getCurrentNotification = () => {
+  return ref(null);
+};

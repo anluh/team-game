@@ -14,7 +14,8 @@ const success = ref('')
 const questForm = reactive({
   question: '',
   answers: [''],
-  qr: ''
+  qr: '',
+  imageName: 'map-1'
 })
 
 // Reset form
@@ -22,6 +23,7 @@ const resetForm = () => {
   questForm.question = ''
   questForm.answers = ['']
   questForm.qr = ''
+  questForm.imageName = 'map-1'
   editingQuest.value = null
   showForm.value = false
   error.value = ''
@@ -51,6 +53,7 @@ const startEdit = (quest) => {
   questForm.question = quest.question
   questForm.answers = [...quest.answers]
   questForm.qr = quest.qr || ''
+  questForm.imageName = quest.imageName || 'map-1'
   editingQuest.value = quest.id
   showForm.value = true
   error.value = ''
@@ -87,7 +90,8 @@ const saveQuest = async () => {
     const questData = {
       question: questForm.question.trim(),
       answers: cleanAnswers,
-      qr: questForm.qr.trim()
+      qr: questForm.qr.trim(),
+      imageName: questForm.imageName.trim() || 'map-1'
     }
     
     if (editingQuest.value) {
@@ -201,6 +205,20 @@ const confirmDelete = async (questId, question) => {
             />
           </div>
 
+          <!-- Success Image Name -->
+          <div class="form-group">
+            <label for="imageName">Success Image Name:</label>
+            <input 
+              type="text" 
+              id="imageName"
+              v-model="questForm.imageName" 
+              placeholder="Image name (e.g., map-1, map-2, map-3)"
+            />
+            <small class="field-help">
+              This corresponds to the image file shown when the answer is correct (e.g., "map-1" for map-1.jpg). Default: map-1
+            </small>
+          </div>
+
           <div class="modal-footer">
             <button type="button" @click="resetForm" class="btn btn-secondary">Cancel</button>
             <button type="submit" class="btn btn-primary" :disabled="loading">
@@ -228,6 +246,9 @@ const confirmDelete = async (questId, question) => {
           </div>
           <div v-if="quest.qr" class="qr">
             <strong>QR:</strong> {{ quest.qr }}
+          </div>
+          <div class="image-name">
+            <strong>Success Image:</strong> {{ quest.imageName || 'map-1' }}.jpg
           </div>
         </div>
         
@@ -432,6 +453,13 @@ const confirmDelete = async (questId, question) => {
   flex: 1;
 }
 
+.field-help {
+  font-size: 12px;
+  color: #6c757d;
+  margin-top: 4px;
+  display: block;
+}
+
 /* Questions List */
 .questions-list {
   margin-top: 24px;
@@ -464,6 +492,7 @@ const confirmDelete = async (questId, question) => {
 
 .answers {
   margin-bottom: 8px;
+  color: #333;
 }
 
 .answer-tag {
@@ -478,6 +507,12 @@ const confirmDelete = async (questId, question) => {
 .qr {
   font-size: 14px;
   color: #666;
+}
+
+.image-name {
+  font-size: 14px;
+  color: #666;
+  margin-top: 8px;
 }
 
 .question-actions {

@@ -3,6 +3,7 @@ import { getGeneralSettings, getQuests, getUserProgress, updateUserProgress, get
 import { ref, computed, onMounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import VQuest from '../components/VQuest.vue';
+import TeamNotification from '../components/TeamNotification.vue';
 
 // Define props for route parameters
 const props = defineProps({
@@ -22,27 +23,27 @@ const userProgress = ref({
   order: [],
   userData: null
 })
-let userId = null
+const userId = ref(null)
 
 onMounted(() => {
   // First, check if userId is provided via route parameter
   if (props.userId) {
-    userId = props.userId
+    userId.value = props.userId
     // Store in sessionStorage for this session
-    window.sessionStorage.setItem('user', userId)
+    window.sessionStorage.setItem('user', userId.value)
   } else {
     // Fall back to sessionStorage
-    userId = window.sessionStorage.getItem('user')
+    userId.value = window.sessionStorage.getItem('user')
   }
   
   // Redirect if no user found
-  if (!userId) {
+  if (!userId.value) {
     router.push({ name: 'Home' })
     return
   }
   
   // Get user progress (including quest order and current question index)
-  const progressRef = getUserProgress(userId)
+  const progressRef = getUserProgress(userId.value)
   
   // Watch the Firebase ref and update our local ref
   watch(progressRef, (newValue) => {
@@ -128,7 +129,7 @@ const handleNextQuestion = async () => {
     const nextIndex = activeQuest.value + 1
     
     try {
-        await updateUserProgress(userId, nextIndex)
+        await updateUserProgress(userId.value, nextIndex)
         // The userProgress will be updated automatically via the Firebase listener
     } catch (error) {
         console.error('Error updating progress:', error)
@@ -149,6 +150,9 @@ watch(userProgress, (newProgress) => {
 <template>
     <div class="quests-page">
         <h1>{{ teamName }}</h1>
+        
+        <!-- Team Notification Component -->
+        <TeamNotification v-if="userId" :teamId="userId" :isAdmin="false" />
         
         <!-- Game Status -->
         <div v-if="!isGameStarted" class="game-status-banner">
@@ -203,88 +207,239 @@ watch(userProgress, (newProgress) => {
 
 <style scoped>
 .quests-page {
-    max-width: 800px;
+    max-width: 100%;
     margin: 0 auto;
-    padding: 20px;
+    padding: 16px;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+.quests-page h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #212529;
+    text-align: center;
+    margin: 0 0 24px 0;
+    padding: 16px;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .game-status-banner {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     text-align: center;
-    padding: 40px 20px;
-    border-radius: 12px;
-    margin: 20px 0;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    padding: 32px 20px;
+    border-radius: 20px;
+    margin: 0 0 24px 0;
+    box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
 }
 
 .game-status-banner h2 {
-    margin: 0 0 10px 0;
-    font-size: 1.8rem;
+    margin: 0 0 12px 0;
+    font-size: 22px;
+    font-weight: 600;
 }
 
 .game-status-banner p {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: 16px;
     opacity: 0.9;
+    line-height: 1.5;
 }
 
 .progress-bar {
     background: white;
-    border-radius: 8px;
+    border-radius: 16px;
     padding: 20px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 24px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .progress-info {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
 }
 
 .progress-text {
-    font-weight: bold;
+    font-weight: 600;
     color: #495057;
-    font-size: 16px;
+    font-size: 18px;
+    text-align: center;
 }
 
 .progress-visual {
     width: 100%;
-    height: 8px;
+    height: 12px;
     background-color: #e9ecef;
-    border-radius: 4px;
+    border-radius: 6px;
     overflow: hidden;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .progress-fill {
     height: 100%;
     background: linear-gradient(90deg, #007bff 0%, #0056b3 100%);
-    transition: width 0.3s ease;
+    transition: width 0.5s ease;
+    border-radius: 6px;
 }
 
 .completion-info {
-    margin-top: 20px;
-    padding: 15px;
+    margin-top: 24px;
+    padding: 20px;
     background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
-    border-radius: 8px;
+    border-radius: 16px;
     text-align: center;
+    box-shadow: 0 4px 12px rgba(255, 243, 205, 0.4);
 }
 
 .completion-text {
     margin: 0;
-    font-weight: bold;
+    font-weight: 700;
     color: #856404;
-    font-size: 16px;
+    font-size: 18px;
 }
 
 .loading, .no-quests, .error {
     text-align: center;
-    padding: 40px;
+    padding: 60px 20px;
     color: #6c757d;
+    font-size: 16px;
+    background: white;
+    border-radius: 16px;
+    margin: 24px 0;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
 .error {
     color: #dc3545;
+    background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+}
+
+/* Mobile-specific optimizations */
+@media (max-width: 768px) {
+    .quests-page {
+        padding: 12px;
+    }
+    
+    .quests-page h1 {
+        font-size: 20px;
+        padding: 12px;
+        margin-bottom: 20px;
+    }
+    
+    .game-status-banner {
+        padding: 24px 16px;
+        border-radius: 16px;
+        margin-bottom: 20px;
+    }
+    
+    .game-status-banner h2 {
+        font-size: 20px;
+        margin-bottom: 10px;
+    }
+    
+    .game-status-banner p {
+        font-size: 15px;
+    }
+    
+    .progress-bar {
+        padding: 16px;
+        margin-bottom: 20px;
+        border-radius: 12px;
+    }
+    
+    .progress-text {
+        font-size: 16px;
+    }
+    
+    .progress-visual {
+        height: 10px;
+    }
+    
+    .completion-info {
+        padding: 16px;
+        margin-top: 20px;
+        border-radius: 12px;
+    }
+    
+    .completion-text {
+        font-size: 16px;
+    }
+    
+    .loading, .no-quests, .error {
+        padding: 40px 16px;
+        margin: 20px 0;
+        border-radius: 12px;
+        font-size: 15px;
+    }
+}
+
+/* Very small screens */
+@media (max-width: 360px) {
+    .quests-page {
+        padding: 8px;
+    }
+    
+    .quests-page h1 {
+        font-size: 18px;
+        padding: 10px;
+    }
+    
+    .game-status-banner {
+        padding: 20px 12px;
+    }
+    
+    .game-status-banner h2 {
+        font-size: 18px;
+    }
+    
+    .progress-bar {
+        padding: 12px;
+    }
+    
+    .completion-info {
+        padding: 12px;
+    }
+    
+    .loading, .no-quests, .error {
+        padding: 30px 12px;
+    }
+}
+
+/* Landscape orientation adjustments */
+@media (max-height: 500px) and (orientation: landscape) {
+    .quests-page {
+        padding: 8px;
+        min-height: auto;
+    }
+    
+    .quests-page h1 {
+        margin-bottom: 16px;
+        padding: 8px 16px;
+        font-size: 18px;
+    }
+    
+    .game-status-banner {
+        padding: 20px 16px;
+        margin-bottom: 16px;
+    }
+    
+    .progress-bar {
+        padding: 12px 16px;
+        margin-bottom: 16px;
+    }
+    
+    .completion-info {
+        margin-top: 16px;
+        padding: 12px 16px;
+    }
+    
+    .loading, .no-quests, .error {
+        padding: 30px 16px;
+        margin: 16px 0;
+    }
 }
 </style>

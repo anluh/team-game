@@ -1,7 +1,46 @@
 <script setup>
-import { useLoadUsers, updateAllUserOrders, deleteUser, startGame, stopGame, getGameState, getQuests, updateTeamName } from "../firebase"
+import { useLoadUsers, updateAllUserOrders, deleteUser, startGame, stopGame, getGameState, getQuests, updateTeamName, sendNotificationToTeam } from "../firebase"
 import QuestionsManager from "../components/QuestionsManager.vue"
+import TeamNotification from "../components/TeamNotification.vue"
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+
+// Authentication state
+const isAuthenticated = ref(false)
+const passwordInput = ref('')
+const loginError = ref('')
+const ADMIN_PASSWORD = '1122'
+
+// Check if already authenticated on component mount
+onMounted(() => {
+  const savedAuth = sessionStorage.getItem('adminAuthenticated')
+  if (savedAuth === 'true') {
+    isAuthenticated.value = true
+  }
+  
+  console.log("AdminPage mounted, game state:", gameState.value);
+  if (gameState.value?.isStarted) {
+    startTimer()
+  }
+})
+
+// Login function
+const handleLogin = () => {
+  if (passwordInput.value === ADMIN_PASSWORD) {
+    isAuthenticated.value = true
+    sessionStorage.setItem('adminAuthenticated', 'true')
+    loginError.value = ''
+    passwordInput.value = ''
+  } else {
+    loginError.value = 'Неправильний пароль. Спробуйте ще раз.'
+    passwordInput.value = ''
+  }
+}
+
+// Logout function
+const handleLogout = () => {
+  isAuthenticated.value = false
+  sessionStorage.removeItem('adminAuthenticated')
+}
 
 const users = useLoadUsers()
 const quests = getQuests()
@@ -17,6 +56,11 @@ const expandedUsers = ref(new Set())
 const editingTeamId = ref(null)
 const editingTeamName = ref('')
 const savingTeamName = ref(false)
+
+// Team message forms state
+const sendingNotification = ref(false)
+const teamMessageForms = ref({}) // For individual team message forms
+const teamMessages = ref({}) // For individual team messages
 
 // Timer functionality
 const startTimer = () => {
@@ -258,13 +302,49 @@ const confirmDeleteTeam = async (userId, teamName) => {
   }
 }
 
-// Lifecycle
-onMounted(() => {
-  console.log("AdminPage mounted, game state:", gameState.value);
-  if (gameState.value?.isStarted) {
-    startTimer()
+// Individual team message functions
+const showTeamMessageForm = (teamId) => {
+  teamMessageForms.value[teamId] = true
+  if (!teamMessages.value[teamId]) {
+    teamMessages.value[teamId] = ''
   }
-})
+}
+
+const hideTeamMessageForm = (teamId) => {
+  teamMessageForms.value[teamId] = false
+  teamMessages.value[teamId] = ''
+}
+
+const sendTeamMessage = async (teamId) => {
+  const messageText = teamMessages.value[teamId]
+  if (!messageText || !messageText.trim()) {
+    alert('Будь ласка, введіть повідомлення')
+    return
+  }
+  
+  sendingNotification.value = true
+  
+  try {
+    await sendNotificationToTeam(teamId, messageText)
+    const teamName = users.value.find(u => u.id === teamId)?.name || 'Unknown Team'
+    
+    // Success message
+    const successMsg = `Повідомлення надіслано команді "${teamName}"!`
+    message.value = successMsg
+    setTimeout(() => {
+      message.value = ''
+    }, 3000)
+    
+    // Hide form and clear message
+    hideTeamMessageForm(teamId)
+    
+  } catch (error) {
+    console.error('Error sending team message:', error)
+    alert(`Помилка відправки повідомлення: ${error.message}`)
+  } finally {
+    sendingNotification.value = false
+  }
+}
 
 // Watch for game state changes to start/stop timer
 watch(() => gameState.value?.isStarted, (isStarted) => {
@@ -282,8 +362,42 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="admin-page">
-    <h1>Admin Page</h1>
+  <!-- Login Form -->
+  <div v-if="!isAuthenticated" class="login-container">
+    <div class="login-form">
+      <h1>🔐 Admin Access</h1>
+      <p>Enter the admin password to access the control panel:</p>
+      
+      <form @submit.prevent="handleLogin">
+        <div class="form-group">
+          <input
+            v-model="passwordInput"
+            type="password"
+            placeholder="Enter admin password..."
+            class="password-input"
+            autocomplete="current-password"
+          />
+        </div>
+        
+        <button type="submit" class="login-btn" :disabled="!passwordInput.trim()">
+          🚀 Access Admin Panel
+        </button>
+        
+        <div v-if="loginError" class="error-message">
+          ❌ {{ loginError }}
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Admin Panel -->
+  <div v-else class="admin-page">
+    <div class="admin-header">
+      <h1>Admin Page</h1>
+      <button @click="handleLogout" class="logout-btn">
+        🚪 Logout
+      </button>
+    </div>
 
     <!-- Game Control Section -->
     <section class="admin-section game-control">
@@ -329,7 +443,7 @@ onUnmounted(() => {
         <button 
           @click="regenerateOrders" 
           class="btn btn-warning"
-          :disabled="loading || users.length === 0"
+          :disabled="loading || users.length === 0 || gameState?.isStarted"
         >
           {{ loading ? 'Regenerating...' : 'Regenerate All Orders' }}
         </button>
@@ -339,6 +453,7 @@ onUnmounted(() => {
         <div v-for="user in users" :key="user.id" class="user-item">
           <div class="user-content">
             <div class="user-actions">
+              <!-- Edit Team Name Button -->
               <button 
                 @click="startEditingTeamName(user.id, user.name)"
                 class="btn btn-primary btn-sm"
@@ -347,6 +462,18 @@ onUnmounted(() => {
               >
                 Edit
               </button>
+              
+              <!-- Send Message Button -->
+              <button 
+                @click="showTeamMessageForm(user.id)"
+                class="btn btn-success btn-sm"
+                :disabled="sendingNotification || teamMessageForms[user.id]"
+                title="Send message to this team"
+              >
+                📢 Message
+              </button>
+              
+              <!-- Delete Team Button -->
               <button 
                 @click="confirmDeleteTeam(user.id, user.name)"
                 class="btn btn-danger btn-sm"
@@ -394,6 +521,9 @@ onUnmounted(() => {
                 </div>
               </div>
               
+              <!-- Team Notification (if any) -->
+              <TeamNotification :teamId="user.id" :isAdmin="true" />
+              
               <div v-if="user.order && user.order.length > 0" class="order-info">
                 <div class="order-header" @click="toggleUserQuestions(user.id)">
                   <span class="order-label">Порядок питань:</span>
@@ -418,6 +548,50 @@ onUnmounted(() => {
               
               <div v-else class="order-info">
                 <span class="order-label">⚠️ No quest order assigned</span>
+              </div>
+            </div>
+            
+            <!-- Individual Team Message Form -->
+            <div v-if="teamMessageForms[user.id]" class="team-message-form">
+              <div class="message-form-header">
+                <h4>📢 Send Message to {{ user.name }}</h4>
+                <button 
+                  @click="hideTeamMessageForm(user.id)"
+                  class="btn btn-secondary btn-xs"
+                  :disabled="sendingNotification"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              <div class="message-form-body">
+                <textarea 
+                  v-model="teamMessages[user.id]"
+                  placeholder="Enter your message for this team..."
+                  rows="3"
+                  maxlength="500"
+                  class="team-message-input"
+                ></textarea>
+                <small class="char-count">
+                  {{ (teamMessages[user.id] || '').length }}/500 characters
+                </small>
+              </div>
+              
+              <div class="message-form-actions">
+                <button 
+                  @click="hideTeamMessageForm(user.id)"
+                  class="btn btn-secondary btn-sm"
+                  :disabled="sendingNotification"
+                >
+                  Cancel
+                </button>
+                <button 
+                  @click="sendTeamMessage(user.id)"
+                  class="btn btn-primary btn-sm"
+                  :disabled="sendingNotification || !(teamMessages[user.id] || '').trim()"
+                >
+                  {{ sendingNotification ? 'Sending...' : '📤 Send Message' }}
+                </button>
               </div>
             </div>
             
@@ -829,6 +1003,138 @@ onUnmounted(() => {
   min-width: 24px;
 }
 
+/* Team Message Form Styles */
+.team-message-form {
+  margin-top: 12px;
+  padding: 16px;
+  background: #fff;
+  border: 2px solid #007bff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 123, 255, 0.1);
+}
+
+.message-form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.message-form-header h4 {
+  margin: 0;
+  color: #495057;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.message-form-body {
+  margin-bottom: 12px;
+}
+
+.team-message-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 70px;
+  color: #333;
+  background-color: #fff;
+}
+
+.team-message-input:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.team-message-input::placeholder {
+  color: #999;
+}
+
+.message-form-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* Fix text color issues */
+.user-item .label {
+  font-weight: 600;
+  color: #495057;
+}
+
+.user-item .value {
+  color: #212529;
+  margin-left: 8px;
+}
+
+.name-display .value {
+  color: #212529;
+  font-weight: 500;
+}
+
+.order-label {
+  font-weight: 500;
+  color: #6c757d;
+}
+
+.order-value {
+  color: #495057;
+  margin-left: 8px;
+}
+
+.question-text {
+  flex: 1;
+  color: #6c757d;
+}
+
+.question-item.current .question-text {
+  color: #1976d2;
+  font-weight: 500;
+}
+
+.char-count {
+  display: block;
+  text-align: right;
+  margin-top: 4px;
+  color: #6c757d;
+  font-size: 11px;
+}
+
+/* Button improvements */
+.btn-success {
+  background-color: #28a745;
+  color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.btn-success:disabled {
+  background-color: #6c757d;
+  color: #fff;
+}
+
+.btn-primary {
+  background-color: #007bff;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #0056b3;
+}
+
+.btn-primary:disabled {
+  background-color: #6c757d;
+  color: #fff;
+}
+
 /* New styles for team name editing */
 @media (max-width: 768px) {
   .admin-page {
@@ -870,6 +1176,185 @@ onUnmounted(() => {
     top: 8px;
     right: 8px;
     /* Keep absolute positioning on mobile too */
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  
+  .team-message-form {
+    margin-top: 10px;
+    padding: 12px;
+  }
+  
+  .message-form-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .message-form-header h4 {
+    font-size: 13px;
+  }
+  
+  .team-message-input {
+    font-size: 14px;
+    min-height: 60px;
+  }
+  
+  .message-form-actions {
+    flex-direction: column;
+    gap: 6px;
+  }
+  
+  .char-count {
+    font-size: 10px;
+  }
+}
+
+/* Login Form Styles */
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+  padding: 20px;
+}
+
+.login-form {
+  background: white;
+  padding: 40px;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(0, 123, 255, 0.3);
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+}
+
+.login-form h1 {
+  color: #007bff;
+  margin-bottom: 16px;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.login-form p {
+  color: #6c757d;
+  margin-bottom: 24px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.password-input {
+  width: 100%;
+  padding: 16px 20px;
+  border: 2px solid #e9ecef;
+  border-radius: 12px;
+  font-size: 16px;
+  transition: all 0.3s ease;
+  box-sizing: border-box;
+  background-color: #fff;
+  color: #212529;
+}
+
+.password-input:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.15);
+}
+
+.login-btn {
+  width: 100%;
+  padding: 16px 24px;
+  background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-bottom: 16px;
+}
+
+.login-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 123, 255, 0.4);
+}
+
+.login-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.error-message {
+  color: #dc3545;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 12px;
+  background: #f8d7da;
+  border-radius: 8px;
+  border: 1px solid #f5c6cb;
+}
+
+/* Admin Header Styles */
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #e9ecef;
+}
+
+.admin-header h1 {
+  margin: 0;
+  color: #007bff;
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.logout-btn {
+  padding: 10px 16px;
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.logout-btn:hover {
+  background: #c82333;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3);
+}
+
+/* Mobile Responsive for Login */
+@media (max-width: 768px) {
+  .login-form {
+    padding: 30px 20px;
+    margin: 10px;
+  }
+  
+  .login-form h1 {
+    font-size: 24px;
+  }
+  
+  .admin-header {
+    flex-direction: column;
+    gap: 12px;
+    text-align: center;
+  }
+  
+  .admin-header h1 {
+    font-size: 24px;
   }
 }
 </style>
