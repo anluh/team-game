@@ -1,5 +1,5 @@
 <script setup>
-import { useLoadUsers, updateAllUserOrders, deleteUser, startGame, stopGame, getGameState, getQuests, updateTeamName, sendNotificationToTeam } from "../firebase"
+import { useLoadUsers, updateAllUserOrders, deleteUser, startGame, stopGame, getGameState, getQuests, updateTeamName, sendNotificationToTeam, useHelpRequests, clearHelpRequest } from "../firebase"
 import QuestionsManager from "../components/QuestionsManager.vue"
 import TeamNotification from "../components/TeamNotification.vue"
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
@@ -45,6 +45,7 @@ const handleLogout = () => {
 const users = useLoadUsers()
 const quests = getQuests()
 const gameState = getGameState()
+const helpRequests = useHelpRequests()
 const loading = ref(false)
 const deletingUserId = ref(null)
 const message = ref('')
@@ -432,6 +433,17 @@ const sendTeamMessage = async (teamId) => {
   }
 }
 
+// Handle clearing help request
+const handleClearHelpRequest = async (userId) => {
+  try {
+    await clearHelpRequest(userId)
+    console.log('Help request cleared for team:', userId)
+  } catch (error) {
+    console.error('Error clearing help request:', error)
+    alert(`Error clearing help request: ${error.message}`)
+  }
+}
+
 // Watch for game state changes to start/stop timer
 watch(() => gameState.value?.isStarted, (isStarted) => {
   console.log("Game state changed, isStarted:", isStarted);
@@ -536,7 +548,7 @@ onUnmounted(() => {
       </div>
       
       <div class="users-list">
-        <div v-for="user in users" :key="user.id" class="user-item">
+        <div v-for="user in users" :key="user.id" class="user-item" :class="{ 'needs-help': helpRequests[user.id] }">
           <div class="user-content">
             <div class="user-actions">
               <!-- Edit Team Name Button -->
@@ -609,6 +621,20 @@ onUnmounted(() => {
               
               <!-- Team Notification (if any) -->
               <TeamNotification :teamId="user.id" :isAdmin="true" />
+              
+              <!-- Help Request Alert -->
+              <div v-if="helpRequests[user.id]" class="help-request-alert">
+                <div class="help-content">
+                  <span class="help-icon">🆘</span>
+                  <span class="help-text">Команда потребує допомоги!</span>
+                  <button 
+                    @click="handleClearHelpRequest(user.id)"
+                    class="help-clear-btn"
+                  >
+                    ✓ OK
+                  </button>
+                </div>
+              </div>
               
               <!-- Completion Time Display -->
               <div v-if="getCompletionTime(user)" class="completion-time-display">
@@ -888,6 +914,10 @@ onUnmounted(() => {
   border-left: 4px solid #007bff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   position: relative;
+}
+
+.user-item.needs-help {
+  border-left-color: #dc3545; /* Red border for help requests */
 }
 
 .user-content {
@@ -1223,6 +1253,59 @@ onUnmounted(() => {
   border-radius: 4px;
   font-family: 'Courier New', monospace;
   font-size: 14px;
+}
+
+/* Help Request Alert Styles */
+.help-request-alert {
+  margin: 8px 0;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+  border: 1px solid #f5c6cb;
+  border-radius: 8px;
+  border-left: 4px solid #dc3545;
+  animation: helpPulse 2s infinite;
+}
+
+@keyframes helpPulse {
+  0%, 100% { 
+    box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4);
+  }
+  50% { 
+    box-shadow: 0 0 0 10px rgba(220, 53, 69, 0);
+  }
+}
+
+.help-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.help-icon {
+  font-size: 18px;
+}
+
+.help-text {
+  font-weight: 600;
+  color: #721c24;
+  flex: 1;
+}
+
+.help-clear-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.help-clear-btn:hover {
+  background: #218838;
+  transform: scale(1.05);
 }
 
 /* Button improvements */

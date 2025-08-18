@@ -1,5 +1,5 @@
 <script setup>
-import { getGeneralSettings, getQuests, getUserProgress, updateUserProgress, getGameState } from '../firebase'
+import { getGeneralSettings, getQuests, getUserProgress, updateUserProgress, getGameState, requestHelp, watchTeamHelpRequest } from '../firebase'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import VQuest from '../components/VQuest.vue';
@@ -25,6 +25,7 @@ const userProgress = ref({
 })
 const userId = ref(null)
 const allQuestsCompleted = ref(false)
+const helpRequested = ref(false)
 let validationInterval = null
 
 onMounted(() => {
@@ -77,6 +78,25 @@ onMounted(() => {
       }
     }
   }, { immediate: true })
+  
+  // Watch for help request status changes
+  if (userId.value) {
+    const unsubscribeHelpWatcher = watchTeamHelpRequest(userId.value, (exists, data) => {
+      console.log('Help request status changed:', { exists, data })
+      if (!exists && helpRequested.value) {
+        // Help request was cleared by admin, reset button
+        helpRequested.value = false
+        console.log('Help request cleared by admin, button reset')
+      }
+    })
+    
+    // Store unsubscribe function for cleanup
+    onUnmounted(() => {
+      if (unsubscribeHelpWatcher) {
+        unsubscribeHelpWatcher()
+      }
+    })
+  }
 })
 
 // Cleanup on unmount
@@ -213,6 +233,21 @@ const handleNextQuestion = async () => {
     }
 }
 
+// Handle help request
+const handleHelpRequest = async () => {
+  if (!userId.value || helpRequested.value) return
+  
+  try {
+    helpRequested.value = true
+    await requestHelp(userId.value)
+    console.log('Help requested for team:', userId.value)
+  } catch (error) {
+    console.error('Error requesting help:', error)
+    helpRequested.value = false
+    alert('Помилка при відправці запиту на допомогу. Спробуйте ще раз.')
+  }
+}
+
 // Watch for user deletion or non-existence (when userProgress becomes null)
 watch(userProgress, (newProgress, oldProgress) => {
     console.log('User progress watch triggered:', { newProgress, oldProgress, userId: userId.value })
@@ -230,13 +265,24 @@ watch(userProgress, (newProgress, oldProgress) => {
     <div class="quests-page">
         <h1>{{ teamName }}</h1>
         
+        <!-- Help Request Button -->
+        <div class="help-section">
+            <button 
+                @click="handleHelpRequest"
+                class="help-btn"
+                :disabled="helpRequested"
+                :class="{ 'help-requested': helpRequested }"
+            >
+                {{ helpRequested ? '✓ Запит відправлено' : '🆘 Потрібна допомога' }}
+            </button>
+        </div>
+        
         <!-- Team Notification Component -->
         <TeamNotification v-if="userId" :teamId="userId" :isAdmin="false" />
         
         <!-- Game Status -->
         <div v-if="!isGameStarted" class="game-status-banner">
             <h2>{{ gameStatusMessage }}</h2>
-            <p>Please wait for the game administrator to begin the session.</p>
         </div>
         
         <!-- Game Started - Show Quest Content -->
@@ -353,6 +399,40 @@ watch(userProgress, (newProgress, oldProgress) => {
     font-size: 16px;
     opacity: 0.9;
     line-height: 1.5;
+}
+
+/* Help Section Styles */
+.help-section {
+    text-align: center;
+    margin: 20px 0;
+}
+
+.help-btn {
+    background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+}
+
+.help-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255, 107, 107, 0.4);
+}
+
+.help-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+
+.help-btn.help-requested {
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
 }
 
 .progress-bar {
@@ -572,6 +652,17 @@ watch(userProgress, (newProgress, oldProgress) => {
     
     .game-status-banner p {
         font-size: 15px;
+    }
+    
+    /* Help button mobile styles */
+    .help-section {
+        margin: 16px 0;
+    }
+    
+    .help-btn {
+        padding: 10px 20px;
+        font-size: 14px;
+        border-radius: 6px;
     }
     
     .progress-bar {

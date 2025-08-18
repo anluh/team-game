@@ -377,6 +377,60 @@ export const getUserProgress = (id) => {
     return userProgress
 };
 
+// Help request functions
+export const requestHelp = async (userId) => {
+  try {
+    const helpRef = doc(db, "helpRequests", userId);
+    await setDoc(helpRef, {
+      userId: userId,
+      requestedAt: Date.now(),
+      isActive: true
+    });
+    console.log("Help requested for team:", userId);
+  } catch (error) {
+    console.error("Error requesting help:", error);
+    throw error;
+  }
+};
+
+export const clearHelpRequest = async (userId) => {
+  try {
+    const helpRef = doc(db, "helpRequests", userId);
+    await deleteDoc(helpRef);
+    console.log("Help request cleared for team:", userId);
+  } catch (error) {
+    console.error("Error clearing help request:", error);
+    throw error;
+  }
+};
+
+// Watch for help requests changes
+export const useHelpRequests = () => {
+  const helpRequests = ref({})
+  
+  onSnapshot(collection(db, "helpRequests"), (snapshot) => {
+    const requests = {}
+    snapshot.forEach((doc) => {
+      requests[doc.id] = { id: doc.id, ...doc.data() }
+    })
+    helpRequests.value = requests
+    console.log("Help requests updated:", requests)
+  })
+  
+  return helpRequests
+}
+
+// Watch for a specific team's help request status
+export const watchTeamHelpRequest = (userId, callback) => {
+  const helpRef = doc(db, "helpRequests", userId);
+  
+  return onSnapshot(helpRef, (doc) => {
+    const exists = doc.exists();
+    const data = exists ? doc.data() : null;
+    callback(exists, data);
+  });
+}
+
 // GAME STATE MANAGEMENT
 export const startGame = async () => {
   try {
